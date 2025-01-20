@@ -1,0 +1,352 @@
+# version: '3.7'
+# services:
+#   trino:
+#     container_name: trino
+#     image: 'trinodb/trino:351'
+#     ports:
+#       - '8080:8080'
+#     volumes:
+#       - ./etc:/usr/lib/trino/etc:ro
+#     networks:
+#       - trino-network
+
+
+#   cassandra:
+#     image: cassandra:5.0
+#     container_name: local-cassandra
+#     ports:
+#       - '9042:9042'
+#     environment:
+#       CASSANDRA_BROADCAST_ADDRESS: local-cassandra
+#       CASSANDRA_CLUSTER_NAME: local-cluster
+#     networks:
+#       - trino-network
+#     volumes:
+#       - cassandra-data:/var/lib/cassandra
+
+#   superset:
+#     container_name: superset
+#     image: apache/superset:3.1.0
+#     ports:
+#       - '8090:8088'
+#     environment:
+#       SUPERSET_SECRET_KEY: test
+#     networks:
+#       - trino-network
+
+
+# volumes:
+#   cassandra-data:
+#     driver: local
+
+# networks:
+#   trino-network:
+#     driver: bridge
+
+
+# version: '3.8'
+
+# services:
+#   zookeeper:
+#     image: confluentinc/cp-zookeeper:7.4.0
+#     container_name: zookeeper
+#     environment:
+#       ZOOKEEPER_CLIENT_PORT: 2181
+#     ports:
+#       - "2181:2181"
+
+#   kafka:
+#     image: confluentinc/cp-kafka:7.4.0
+#     container_name: kafka
+#     depends_on:
+#       - zookeeper
+#     environment:
+#       KAFKA_BROKER_ID: 1
+#       KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+#       KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092
+#       KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://localhost:9092
+#       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+#     ports:
+#       - "9092:9092"
+#     networks:
+#       - pipeline-network
+
+#   spark-master:
+#     image: bitnami/spark:latest
+#     container_name: spark-master
+#     environment:
+#       SPARK_MODE: master
+#     ports:
+#       - "7077:7077"
+#       - "8080:8080"
+#     networks:
+#       - pipeline-network
+
+#   spark-worker:
+#     image: bitnami/spark:latest
+#     container_name: spark-worker
+#     environment:
+#       SPARK_MODE: worker
+#       SPARK_MASTER_URL: spark://spark-master:7077
+#     depends_on:
+#       - spark-master
+#     networks:
+#       - pipeline-network
+
+#   cassandra:
+#     image: cassandra:5.0
+#     container_name: cassandra
+#     ports:
+#       - "9042:9042"
+#     networks:
+#       - pipeline-network
+
+#   trino:
+#     image: trinodb/trino:351
+#     container_name: trino
+#     ports:
+#       - "8081:8080"
+#     depends_on:
+#       - cassandra
+#     networks:
+#       - pipeline-network
+
+#   superset:
+#     image: apache/superset:3.1.0
+#     container_name: superset
+#     ports:
+#       - "8090:8088"
+#     environment:
+#       SUPERSET_SECRET_KEY: test
+#     depends_on:
+#       - trino
+#     networks:
+#       - pipeline-network
+
+# networks:
+#   pipeline-network:
+#     driver: bridge
+
+version: '3.8'
+
+services:
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.4.0
+    container_name: zookeeper
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+    ports:
+      - "2181:2181"
+    networks:
+      - pipeline-network
+
+  kafka:
+    image: confluentinc/cp-kafka:7.4.0
+    container_name: kafka
+    depends_on:
+      - zookeeper
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092,PLAINTEXT_HOST://localhost:9093
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+    ports:
+      - "9092:9092"
+      - "9093:9093"
+    networks:
+      - pipeline-network
+
+  spark-master:
+    image: bitnami/spark:latest
+    container_name: spark-master
+    depends_on:
+      - namenode
+      - datanode
+      # - datanode1
+      # - datanode2
+      # - datanode3
+    environment:
+      - SPARK_MODE=master
+      - SPARK_RPC_AUTHENTICATION_ENABLED=no
+      - SPARK_RPC_ENCRYPTION_ENABLED=no
+      - SPARK_LOCAL_STORAGE_ENCRYPTION_ENABLED=no
+      - SPARK_SSL_ENABLED=no
+      - SPARK_MASTER=spark://spark-master:7077
+      - CORE_CONF_fs_defaultFS=hdfs://namenode:9000
+    ports:
+      - "7077:7077"
+      - "8081:8080"
+    networks:
+      - pipeline-network
+
+  spark-worker:
+    image: bitnami/spark:latest
+    container_name: spark-worker
+    environment:
+      - SPARK_MODE=worker
+      - SPARK_MASTER_URL=spark://spark-master:7077
+      - SPARK_WORKER_CORES=2
+      - SPARK_WORKER_MEMORY=4G
+      - SPARK_RPC_AUTHENTICATION_ENABLED=no
+      - SPARK_RPC_ENCRYPTION_ENABLED=no
+      - SPARK_LOCAL_STORAGE_ENCRYPTION_ENABLED=no
+      - SPARK_SSL_ENABLED=no
+    depends_on:
+      - spark-master
+    networks:
+      - pipeline-network
+
+  #Add other services as needed (Cassandra, Trino, etc.)
+  trino:
+    container_name: trino
+    image: 'trinodb/trino:351'
+    ports:
+      - '8080:8080'
+    volumes:
+      - ./etc:/usr/lib/trino/etc:ro
+    networks:
+      - pipeline-network
+
+
+  cassandra:
+    image: cassandra:5.0
+    container_name: cassandra
+    ports:
+      - '9042:9042'
+    environment:
+      CASSANDRA_BROADCAST_ADDRESS: cassandra
+      CASSANDRA_CLUSTER_NAME: local-cluster
+    networks:
+      - pipeline-network
+    volumes:
+      - cassandra-data:/var/lib/cassandra
+
+  superset:
+    container_name: superset
+    image: apache/superset:3.1.0
+    ports:
+      - '8090:8088'
+    volumes:
+      - "./dashboard_template:/app/dashboard_template"
+    environment:
+      SUPERSET_SECRET_KEY: test
+    networks:
+      - pipeline-network
+
+  namenode:
+    image: bde2020/hadoop-namenode:2.0.0-hadoop3.2.1-java8
+    container_name: namenode
+    restart: always
+    volumes:
+      - hadoop_namenode:/hadoop/dfs/name
+    environment:
+      - CLUSTER_NAME=hadoop-cluster
+      - CORE_CONF_fs_defaultFS=hdfs://namenode:9000
+    ports:
+      - "9870:9870"  # NameNode Web UI
+      - "9000:9000"  # NameNode RPC port
+    networks:
+      - pipeline-network
+    env_file:
+      - ./hadoop.env
+
+  # datanode-1:
+  #   image: bde2020/hadoop-datanode:2.0.0-hadoop3.2.1-java8
+  #   container_name: datanode-1
+  #   restart: always
+  #   volumes:
+  #     - hadoop_datanode-1:/hadoop/dfs/data
+  #   environment:
+  #     SERVICE_PRECONDITION: "namenode:9870"
+  #     CORE_CONF_fs_defaultFS: hdfs://namenode:9000
+  #   env_file:
+  #     - ./hadoop.env
+
+
+  # datanode-2:
+  #   image: bde2020/hadoop-datanode:2.0.0-hadoop3.2.1-java8
+  #   container_name: datanode-2
+  #   restart: always
+  #   volumes:
+  #     - hadoop_datanode-2:/hadoop/dfs/data
+  #   environment:
+  #     SERVICE_PRECONDITION: "namenode:9870"
+  #   env_file:
+  #     - ./hadoop.env
+
+
+  # datanode-3:
+  #   image: bde2020/hadoop-datanode:2.0.0-hadoop3.2.1-java8
+  #   container_name: datanode-3
+  #   restart: always
+  #   volumes:
+  #     - hadoop_datanode-3:/hadoop/dfs/data
+  #   environment:
+  #     SERVICE_PRECONDITION: "namenode:9870"
+  #   env_file:
+  #     - ./hadoop.env
+
+  resourcemanager:
+    image: bde2020/hadoop-resourcemanager:2.0.0-hadoop3.2.1-java8
+    container_name: resourcemanager
+    restart: always
+    environment:
+      SERVICE_PRECONDITION: "namenode:9000 namenode:9870"
+    env_file:
+      - ./hadoop.env
+
+
+  nodemanager1:
+    image: bde2020/hadoop-nodemanager:2.0.0-hadoop3.2.1-java8
+    container_name: nodemanager
+    restart: always
+    environment:
+      SERVICE_PRECONDITION: "namenode:9000 namenode:9870 resourcemanager:8088"
+    env_file:
+      - ./hadoop.env
+
+
+  historyserver:
+    image: bde2020/hadoop-historyserver:2.0.0-hadoop3.2.1-java8
+    container_name: historyserver
+    restart: always
+    environment:
+      SERVICE_PRECONDITION: "namenode:9000 namenode:9870 resourcemanager:8088"
+    volumes:
+      - hadoop_historyserver:/hadoop/yarn/timeline
+    env_file:
+      - ./hadoop.env
+
+  datanode:
+    image: bde2020/hadoop-datanode:2.0.0-hadoop3.2.1-java8
+    container_name: datanode
+    volumes:
+      - hadoop_datanode:/hadoop/dfs/data
+    environment:
+      - SERVICE_PRECONDITION=namenode:9870
+      - CORE_CONF_fs_defaultFS=hdfs://namenode:9000
+    depends_on:
+      - namenode
+    ports:
+      - "9864:9864"  # DataNode Web UI
+    networks:
+      - pipeline-network
+    env_file:
+      - ./hadoop.env
+
+volumes:
+  hadoop_namenode:
+  hadoop_datanode:
+  # hadoop_datanode-1:
+  # hadoop_datanode-2:
+  # hadoop_datanode-3: 
+  hadoop_historyserver:
+  cassandra-data:
+    driver: local
+    
+networks:
+  pipeline-network:
+    driver: bridge
